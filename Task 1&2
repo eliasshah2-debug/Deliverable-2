@@ -1,0 +1,89 @@
+"""INF201 Innlevering 2"""
+ 
+import json
+import re
+from pathlib import Path
+ 
+ 
+def read_log_file(path: str | Path) -> tuple[str, str]:
+
+    path = Path(path)
+    raw = path.read_bytes()
+ 
+    try:
+        return raw.decode("utf-8"), "utf-8"
+    except UnicodeDecodeError:
+        return raw.decode("iso-8859-1"), "iso-8859-1"
+ 
+ 
+
+LOG_PATTERN = re.compile(
+    r"^\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]\s+"
+    r"\[(?P<register_id>[^\]]+)\]\s+"
+    r"item=(?P<item>.+?)\s+"
+    r"price=(?P<price>-?\d+(?:\.\d+)?)\s+"
+    r"(?P<currency>[A-Z]{3})\s+"
+    r"\((?P<status>SUCCESS|REFUND|CANCELLED)\)\s*$",
+    re.MULTILINE,
+)
+ 
+ 
+def parse_log_text(text: str) -> list[dict]:
+
+    records = []
+    for match in LOG_PATTERN.finditer(text):
+        record = match.groupdict()
+        record["price"] = float(record["price"]) 
+        records.append(record)
+    return records
+ 
+ 
+
+def find_log_files(directory: str | Path, extension: str = ".log") -> list[Path]:
+    """Finner rekursivt alle filer med gitt filendelse."""
+    directory = Path(directory)
+    found: list[Path] = []
+ 
+    for item in directory.iterdir():
+        if item.is_dir():
+            found.extend(find_log_files(item, extension)) 
+        elif item.is_file() and item.suffix == extension:
+            found.append(item)
+ 
+    return sorted(found) 
+ 
+ 
+
+def get_active_register_ids(node) -> set[str]:
+    """Returnerer id-ene til alle registre med "active": true.
+ 
+    Fungerer på enhver kombinasjon av nøstede dictionaries og lister.
+    """
+    active: set[str] = set()
+ 
+    if isinstance(node, dict):
+        if node.get("active") is True and isinstance(node.get("id"), str):
+            active.add(node["id"])
+        for value in node.values():
+            active |= get_active_register_ids(value) 
+    elif isinstance(node, list):
+        for element in node:
+            active |= get_active_register_ids(element)  
+ 
+    return active
+
+ 
+if __name__ == "__main__":
+    log_files = find_log_files("data/2026")
+    print(f"Fant {len(log_files)} loggfiler")
+ 
+    all_records = []
+    for file in log_files:
+        text, enc = read_log_file(file)
+        records = parse_log_text(text)
+        print(f"{file.name}: {enc}, {len(records)} gyldige linjer")
+        all_records.extend(records)
+ 
+    with open("data/store_config.json", encoding="utf-8") as f:
+        config = json.load(f)
+    print("Aktive registre:", get_active_register_ids(config))
